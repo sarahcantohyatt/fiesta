@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fuel Pressure Highs and Lows</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --actual: #2a78d6;
+  --tank: #eb6834;
+  --pump: #1baf7a;
+  --target: #52514e;
+  --critical: #d03b3b;
+  --shift: rgba(137,135,129,0.16);
+  --drop: rgba(208,59,59,0.09);
+  --coast: rgba(124,92,214,0.10);
+  --coast-ink: #6a4cc4;
+  --chip: #f0efec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --actual: #3987e5;
+    --tank: #d95926;
+    --pump: #199e70;
+    --target: #c3c2b7;
+    --shift: rgba(137,135,129,0.20);
+    --drop: rgba(208,59,59,0.16);
+    --coast: rgba(150,124,232,0.16);
+    --coast-ink: #a993ee;
+    --chip: #262624;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255,255,255,0.10);
+  --actual: #3987e5;
+  --tank: #d95926;
+  --pump: #199e70;
+  --target: #c3c2b7;
+  --shift: rgba(137,135,129,0.20);
+  --drop: rgba(208,59,59,0.16);
+  --coast: rgba(150,124,232,0.16);
+  --coast-ink: #a993ee;
+  --chip: #262624;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; font-weight: 650; }
+h2 { font-size: 20px; line-height: 1.3; margin: 0 0 4px; font-weight: 620; }
+h3 { font-size: 16px; margin: 24px 0 6px; font-weight: 620; }
+p { margin: 0 0 12px; }
+.sub { color: var(--ink-2); margin-bottom: 28px; }
+.meta { color: var(--ink-2); font-size: 14px; margin-bottom: 14px; }
+section { margin-top: 36px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 16px 16px;
+}
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; margin: 14px 0 6px; }
+.flow .box {
+  flex: 1 1 130px;
+  background: var(--chip);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.flow .box b { display: block; font-size: 14px; }
+.flow .box span { color: var(--ink-2); }
+.flow .arrow { align-self: center; color: var(--muted); }
+.key { list-style: none; padding: 0; margin: 10px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; font-size: 14px; }
+.key li { display: flex; align-items: center; gap: 8px; }
+.sw { flex: none; width: 22px; height: 0; border-top: 2px solid; }
+.sw.dash { border-top-style: dashed; }
+.sw.band { height: 12px; border: none; border-radius: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--ink-2); margin: 0 0 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart { position: relative; touch-action: pan-y; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart text { font-family: inherit; }
+.chart text.halo { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  min-width: 190px;
+  opacity: 0;
+  transition: opacity 0.1s;
+  z-index: 2;
+}
+.tip.on { opacity: 1; }
+.tip .t { font-weight: 620; margin-bottom: 2px; }
+.tip .r { display: flex; justify-content: space-between; gap: 14px; }
+.tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.tip .r span:last-child { font-variant-numeric: tabular-nums; }
+.tip .k { width: 10px; height: 0; border-top: 2px solid; }
+.tip .k.dash { border-top-style: dashed; }
+.tip hr { border: none; border-top: 1px solid var(--grid); margin: 4px 0; }
+.tip .flag { color: var(--critical); font-weight: 620; }
+ol.callouts { list-style: none; padding: 0; margin: 16px 0 0; counter-reset: c; }
+ol.callouts li { position: relative; padding-left: 32px; margin-bottom: 10px; }
+ol.callouts li::before {
+  counter-increment: c;
+  content: counter(c);
+  position: absolute; left: 0; top: 2px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--ink); color: var(--surface);
+  font-size: 13px; font-weight: 650; text-align: center; line-height: 22px;
+}
+details { margin-top: 12px; font-size: 14px; }
+summary { cursor: pointer; color: var(--ink-2); }
+.tablewrap { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 4px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+th { color: var(--ink-2); font-weight: 600; }
+th:first-child, td:first-child { text-align: left; }
+tr.low td { color: var(--critical); }
+ul.points { padding-left: 20px; margin: 8px 0 0; }
+ul.points li { margin-bottom: 8px; }
+.quote { border-left: 3px solid var(--axis); padding: 2px 0 2px 14px; color: var(--ink); margin: 12px 0; }
+dl.gloss { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 14px; margin: 8px 0 0; }
+dl.gloss dt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+dl.gloss dd { margin: 0; color: var(--ink-2); }
+.small { font-size: 14px; color: var(--ink-2); }
+.part { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--grid); }
+.part h2 { font-size: 22px; }
+.part + section { margin-top: 20px; }
+table.list .txt { white-space: normal; text-align: left; min-width: 200px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fuel Pressure Highs and Lows</h1>
+  <p class="sub">2019 Fiesta 1.6 EcoBoost · FORScan logs, Sep 30 to Oct 3</p>
+
+  <section style="margin-top:0">
+    <div class="card">
+      <h2>Main takeaways</h2>
+      <ul class="points">
+        <li><b>Too low:</b> after a shift, the HP pump sometimes delivers nothing, about 1 in 4 times. The rail falls to tank pressure (~90 psi) at 100% pump command and the engine goes lean. It also happens parked in neutral. One of these set P0087.</li>
+        <li><b>Too high:</b> never above the ~2,150 psi max desired. Staying high while coasting is normal. One odd jump with the pump commanded off.</li>
+        <li><b>Misfires:</b> no link to the pressure events. Cyl 3 is weak mostly at idle, with the pressure on target.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <ul class="key">
+      <li><span class="sw dash" style="border-color:var(--target)"></span>Target (FRP_DSD)</li>
+      <li><span class="sw" style="border-color:var(--actual)"></span>Actual (FRP)</li>
+      <li><span class="sw" style="border-color:var(--tank)"></span>Tank pump side (FLPA)</li>
+      <li><span class="sw" style="border-color:var(--pump)"></span>Pump command (F_VCV)</li>
+      <li><span class="sw band" style="background:var(--shift)"></span>Shift (clutch in)</li>
+      <li><span class="sw band" style="background:var(--drop)"></span>Drop (actual far below target)</li>
+      <li><span class="sw band" style="background:var(--coast)"></span>Fuel off (coasting)</li>
+    </ul>
+    <p class="small" style="margin-top:10px">Hover or tap a chart for exact numbers.</p>
+  </section>
+
+  <div class="part">
+    <h2>Pressure drops</h2>
+  </div>
+
+  <section>
+    <div class="card">
+      <h2>A good shift, then a bad one</h2>
+      <div class="meta">Oct 3, 20 min drive · 6:11–6:41 · 20–45 mph</div>
+      <div class="chart" id="ex1"></div>
+      <ol class="callouts">
+        <li>Shift: target ~2,100 psi, actual follows. Normal.</li>
+        <li>Next shift: rail falls to ~90 psi (tank pressure) for ~5 s.</li>
+        <li>Pump command at 100%, no response. Engine runs lean (AFR up to 18.7).</li>
+        <li>Next shift only partly recovers (230–380 psi).</li>
+      </ol>
+      <details><summary>Show the numbers</summary><div class="tablewrap" data-table="ex1"></div></details>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>The drop that set P0087</h2>
+      <div class="meta">Oct 3, 53 min drive · 46:46–47:26 · 30–60 mph</div>
+      <div class="chart" id="ex2"></div>
+      <ol class="callouts">
+        <li>After a shift, rail stuck at 300–500 psi vs ~2,100 target.</li>
+        <li>Another shift, still no recovery.</li>
+        <li>Fault flag (FRPC_STAT) sets ~18 s in. Matches the P0087 freeze frame: 3,179 rpm, 54 mph, 252 psi.</li>
+        <li>Next shift, the pump works again.</li>
+      </ol>
+      <details><summary>Show the numbers</summary><div class="tablewrap" data-table="ex2"></div></details>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>Parked, in neutral</h2>
+      <div class="meta">Oct 3 bleed-down log · first 40 s · clutch never pressed</div>
+      <div class="chart" id="ex3"></div>
+      <ol class="callouts">
+        <li>Small revs: the pump keeps up.</li>
+        <li>Quicker rev: target ~1,600 psi, rail drops to ~120 psi at 100% command.</li>
+        <li>Next rev overshoots: ~1,360 vs 930 psi for ~1 s.</li>
+      </ol>
+      <p class="small" style="margin:4px 0 0">No clutch or transmission involved.</p>
+      <details><summary>Show the numbers</summary><div class="tablewrap" data-table="ex3"></div></details>
+    </div>
+  </section>
+
+  <div class="part">
+    <h2>Pressure running high</h2>
+    <ul class="points">
+      <li>Max ~2,150 psi, the same as max desired. No over-pressure.</li>
+      <li>Above target for 1–3 s after shifts (~65 times). Normal: the rail only bleeds down through the injectors.</li>
+      <li>Stays high for 5–19 s when coasting with fuel off (8 times). Normal. Back on target within 1–2 s once fuel resumes.</li>
+      <li>3 brief overshoots, 230–430 psi for ~1 s.</li>
+      <li>1 odd jump with the pump commanded off (below).</li>
+    </ul>
+  </div>
+
+  <section>
+    <div class="card">
+      <h2>A jump with the pump commanded off</h2>
+      <div class="meta">Oct 3, 20 min drive · 12:30–12:58 · shift at 43 mph, then coasting</div>
+      <div class="chart" id="ex4"></div>
+      <ol class="callouts">
+        <li>Shift: actual follows target down to ~800 psi.</li>
+        <li>Jumps to ~1,770 psi vs 940 target at 0–1% pump command. Only time in 4 logs.</li>
+        <li>Coasting, fuel off: holds ~1,350 psi for 14 s. Normal.</li>
+        <li>Fuel back on at idle: on target within ~1 s.</li>
+      </ol>
+      <p class="small" style="margin:4px 0 0">Point 2 is based on only 1–2 readings. It's either a bad reading or the pump delivering fuel it wasn't commanded to. A sticking control valve could cause both this and the drops, but one event isn't proof.</p>
+      <details><summary>Show the numbers</summary><div class="tablewrap" data-table="ex4"></div></details>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>Other high-pressure events</h2>
+      <details open>
+        <summary>8 coasting holds (4 s or more)</summary>
+        <div class="tablewrap">
+          <table class="list">
+            <thead><tr><th>Log</th><th>Time</th><th>Speed</th><th>Stayed high</th><th>Fuel off</th><th>Rail</th><th>Target</th></tr></thead>
+            <tbody>
+              <tr><td>Sep 30 drive</td><td>14:15</td><td>31 → 23 mph</td><td>5 s</td><td>5 s</td><td>~870 psi</td><td>~660 psi</td></tr>
+              <tr><td>Sep 30 drive</td><td>15:50</td><td>35 → 16 mph</td><td>11 s</td><td>8 s</td><td>~1,220 psi</td><td>~740 psi</td></tr>
+              <tr><td>Oct 3, 20 min</td><td>10:23</td><td>40 → 28 mph</td><td>8 s</td><td>7 s</td><td>~1,080 psi</td><td>~700 psi</td></tr>
+              <tr><td>Oct 3, 20 min</td><td>12:34</td><td>43 → 18 mph</td><td>19 s</td><td>14 s</td><td>~1,360 psi</td><td>~700 psi</td></tr>
+              <tr><td>Oct 3, 53 min</td><td>15:18</td><td>52 → 38 mph</td><td>5 s</td><td>4 s</td><td>~1,100 psi</td><td>~760 psi</td></tr>
+              <tr><td>Oct 3, 53 min</td><td>15:28</td><td>40 → 19 mph</td><td>11 s</td><td>9 s</td><td>~1,160 psi</td><td>~710 psi</td></tr>
+              <tr><td>Oct 3, 53 min</td><td>19:27</td><td>43 → 26 mph</td><td>9 s</td><td>6 s</td><td>~1,150 psi</td><td>~710 psi</td></tr>
+              <tr><td>Oct 3, 53 min</td><td>21:52</td><td>37 → 27 mph</td><td>6 s</td><td>3 s</td><td>~1,310 psi</td><td>~660 psi</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <details open>
+        <summary>3 short overshoots</summary>
+        <div class="tablewrap">
+          <table class="list">
+            <thead><tr><th>Log</th><th>Time</th><th class="txt">Situation</th><th>Rail</th><th>Target</th></tr></thead>
+            <tbody>
+              <tr><td>Bleed-down</td><td>0:35</td><td class="txt">Parked, revving (point 3 above)</td><td>~1,360 psi</td><td>~930 psi</td></tr>
+              <tr><td>Oct 3, 53 min</td><td>8:30</td><td class="txt">Pulling away after a shift</td><td>~1,460 psi</td><td>~1,100 psi</td></tr>
+              <tr><td>Oct 3, 20 min</td><td>4:14</td><td class="txt">Pulling away after a shift</td><td>~1,380 psi</td><td>~1,150 psi</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <div class="part">
+    <h2>Misfires vs pressure events</h2>
+    <p>No link. Weak-cylinder readings (CYL_n_ACCL) don't increase during or after any drop or high-pressure event.</p>
+  </div>
+
+  <section>
+    <div class="card">
+      <h2>Share of time each cylinder read weak</h2>
+      <div class="meta">All four logs</div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Condition</th><th>Time</th><th>Cyl 1</th><th>Cyl 3</th><th>Cyl 2 and 4</th></tr></thead>
+          <tbody>
+            <tr><td>During a pressure drop</td><td>2.3 min</td><td>0%</td><td>0.1%</td><td>0%</td></tr>
+            <tr><td>10 s after a drop</td><td>3.2 min</td><td>0.1%</td><td>1.5%</td><td>0–0.2%</td></tr>
+            <tr><td>Under load, pressure OK</td><td>14 min</td><td>0.1%</td><td>0.1%</td><td>0–0.1%</td></tr>
+            <tr><td>Other driving</td><td>31 min</td><td>0.2%</td><td>3.3%</td><td>0.2–0.6%</td></tr>
+            <tr><td>Idle</td><td>39 min</td><td>0.1%</td><td>5.0%</td><td>0.1–0.2%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="small" style="margin:12px 0 0">Caveat: the misfire monitor rarely flags anything under load, and a rail drop hits all cylinders equally.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>About the data</h2>
+    <p class="small">FORScan updates each value about every 1.2 s, and the lines between readings are filled in. Pressures are in psi, speeds in mph.</p>
+    <dl class="gloss">
+      <dt>FRP_DSD / FRP</dt><dd>Target / actual rail pressure</dd>
+      <dt>FLPA</dt><dd>Low-pressure (tank pump) side</dd>
+      <dt>F_VCV</dt><dd>HP pump volume control valve command</dd>
+      <dt>CPP_PERCENT</dt><dd>Clutch pedal position</dd>
+      <dt>EQ_RAT11</dt><dd>Measured AFR (29.3 = fuel off)</dd>
+      <dt>FRPC_STAT</dt><dd>Rail pressure fault flag</dd>
+      <dt>CYL_n_ACCL</dt><dd>Misfire monitor, per cylinder (-1 or lower = weak)</dd>
+    </dl>
+  </section>
+</main>
+
+<script>
+const DATA = {"ex1":[[371.2,976,965,86,2.9,1201,1,17.2,50,14.5,0],[371.6,1189,1189,86,5.5,1366,1,20.4,50,14.5,0],[372.0,1324,1343,85,7.9,1412,3,20.4,50,14.3,0],[372.4,1366,1382,86,7.2,1458,5,20.4,44,14.3,0],[372.8,1411,1424,87,6.5,1560,7,20.4,26,14.3,0],[373.2,1450,1461,88,6.0,1836,8,20.4,9,14.5,0],[373.6,1490,1494,90,6.2,2133,9,20.0,0,14.5,0],[374.0,1526,1526,91,6.4,2401,11,20.0,0,14.5,0],[374.4,1530,1434,93,6.0,2651,12,20.8,0,14.8,0],[374.8,1514,1223,96,3.7,2921,13,21.2,21,14.8,0],[375.2,1500,1025,98,1.5,2979,14,20.8,54,14.8,0],[375.6,1479,906,100,0.0,2747,14,17.2,85,14.7,0],[376.0,1452,821,99,0.0,2477,15,12.9,90,14.7,0],[376.4,1426,741,99,0.0,2266,15,11.8,73,14.7,0],[376.8,1492,953,96,2.0,2119,15,18.0,56,29.3,0],[377.2,1606,1378,88,9.2,1960,16,24.7,38,29.3,0],[377.6,1711,1772,82,15.8,1963,16,28.6,22,13.7,0],[378.0,1798,1919,80,18.9,2141,17,27.1,5,13.7,0],[378.4,1881,1955,82,16.5,2319,19,25.5,0,13.7,0],[378.8,1962,1991,84,14.0,2497,21,24.3,0,14.5,0],[379.2,2019,2026,86,12.3,2676,22,24.3,0,14.5,0],[379.6,2071,2064,88,11.6,2869,24,23.9,0,14.5,0],[380.0,2119,2099,90,11.0,3043,26,23.9,0,14.6,0],[380.4,2118,2109,90,10.2,3212,27,23.9,0,14.6,0],[380.8,2109,2113,90,9.5,3368,29,24.3,0,14.6,0],[381.2,2099,2116,90,8.6,3539,30,24.3,0,14.8,0],[381.6,2016,1816,92,6.8,3689,32,24.7,0,14.8,0],[382.0,1912,1392,95,3.9,3850,33,25.1,28,14.8,0],[382.4,1822,1030,97,1.4,3724,34,23.5,59,14.6,0],[382.8,1746,922,98,0.0,3381,34,18.4,92,14.6,0],[383.2,1668,898,98,0.0,3012,34,12.9,72,14.6,0],[383.6,1603,877,98,0.0,2836,34,12.6,41,29.3,0],[384.0,1168,1175,94,15.4,2753,34,18.8,8,29.3,0],[384.4,627,1598,88,51.3,2663,34,25.5,0,29.3,0],[384.8,126,1991,82,84.6,2647,34,28.2,0,13.5,0],[385.2,87,2049,80,100.0,2671,35,26.3,0,13.5,0],[385.6,87,2045,80,100.0,2699,35,24.3,0,13.5,0],[386.0,87,2041,79,100.0,2729,35,23.1,0,18.7,0],[386.4,88,2041,82,100.0,2763,36,22.8,0,18.7,0],[386.8,91,2042,86,100.0,2796,37,22.4,0,18.7,0],[387.2,93,2042,90,100.0,2830,37,22.4,0,17.3,0],[387.6,91,2051,91,100.0,2861,37,22.4,0,17.3,0],[388.0,91,2060,91,100.0,2893,38,22.4,0,17.3,0],[388.4,90,2070,91,100.0,2925,38,22.4,0,16.4,0],[388.8,88,2078,91,100.0,2954,39,22.0,0,16.4,0],[389.2,88,2086,91,100.0,2982,39,22.0,0,16.4,0],[389.6,88,2094,92,100.0,2995,39,20.0,0,15.7,0],[390.0,102,1662,92,100.0,3000,39,16.9,0,15.7,0],[390.4,115,1265,93,100.0,3004,40,13.7,31,15.7,0],[390.8,146,799,93,100.0,2820,40,12.6,67,15.1,0],[391.2,368,801,92,76.9,2579,39,12.9,100,15.1,0],[391.6,590,804,90,43.6,2338,39,13.3,67,15.1,0],[392.0,783,805,89,10.3,2268,39,15.7,33,12.4,0],[392.4,643,1121,89,23.1,2251,38,19.2,0,12.4,0],[392.8,500,1437,89,56.4,2233,38,22.8,0,12.4,0],[393.2,367,1761,89,92.3,2250,38,24.7,0,14.1,0],[393.6,345,1861,87,100.0,2275,39,25.1,0,14.1,0],[394.0,323,1961,85,100.0,2300,39,25.9,0,14.1,0],[394.4,302,2054,83,100.0,2327,40,25.9,0,14.6,0],[394.8,268,2058,84,100.0,2354,40,25.9,0,14.6,0],[395.2,235,2062,86,100.0,2380,41,25.9,0,14.6,0],[395.6,222,2065,87,100.0,2418,41,25.9,0,14.9,0],[396.0,280,2064,87,100.0,2452,42,25.5,0,14.9,0],[396.4,342,2061,87,100.0,2488,42,25.5,0,14.9,0],[396.8,380,2057,87,100.0,2524,43,25.1,0,14.6,0],[397.2,325,2035,87,100.0,2554,43,24.3,0,14.6,0],[397.6,264,2012,88,100.0,2587,44,23.9,0,14.6,0],[398.0,220,1967,89,100.0,2614,44,22.8,0,14.4,0],[398.4,255,1820,89,100.0,2637,45,22.0,0,14.4,0],[398.8,287,1685,88,100.0,2659,45,21.6,0,14.4,0],[399.2,383,1533,87,100.0,2664,45,20.4,0,14.6,0],[399.6,674,1421,89,72.3,2665,45,19.2,0,14.6,0],[400.0,941,1317,91,42.1,2667,45,18.0,0,14.6,0],[400.4,1157,1195,92,6.8,2671,45,16.9,0,14.5,0],[400.8,1027,1075,92,1.6,2675,46,15.7,0,14.5,0]],"ex2":[[2806.0,1555,1054,93,2.6,3525,17,16.5,51,14.8,0],[2806.4,1455,902,95,0.7,3045,17,16.1,80,14.8,0],[2806.8,1304,889,98,10.1,2485,17,16.1,85,14.8,0],[2807.2,1165,875,101,18.8,2013,17,15.7,54,14.8,0],[2807.6,1178,957,103,26.8,2101,17,25.9,24,29.3,0],[2808.0,1530,1387,97,28.0,2204,19,38.8,0,29.3,0],[2808.4,1858,1784,92,28.4,2300,20,51.0,0,29.3,0],[2808.8,2112,2122,87,28.9,2506,21,47.5,0,14.1,0],[2809.2,2126,2131,89,25.3,2722,23,39.6,0,14.1,0],[2809.6,2141,2139,90,21.1,2937,25,31.4,0,14.1,0],[2810.0,2149,2148,92,16.8,3091,26,27.4,0,14.5,0],[2810.4,2097,2099,91,13.9,3238,27,25.9,0,14.5,0],[2810.8,2048,2052,90,12.0,3374,29,24.3,0,14.5,0],[2811.2,1999,2006,89,10.0,3376,29,21.2,0,14.7,0],[2811.6,1881,1653,93,7.4,3319,30,17.2,0,14.7,0],[2812.0,1765,1275,97,4.5,3261,30,12.9,15,14.7,0],[2812.4,1648,895,101,1.6,3092,31,14.9,30,29.3,0],[2812.8,1372,1131,98,17.1,2808,31,26.7,48,29.3,0],[2813.2,1114,1484,94,46.3,2564,31,36.9,38,29.3,0],[2813.6,834,1865,88,78.0,2423,31,43.9,22,29.3,0],[2814.0,676,2029,88,100.0,2486,32,37.6,5,13.1,0],[2814.4,589,2051,92,100.0,2540,33,31.8,0,13.1,0],[2814.8,495,2075,95,100.0,2598,34,26.3,0,13.1,0],[2815.2,431,2097,96,100.0,2657,34,27.4,0,14.9,0],[2815.6,397,2112,93,100.0,2713,35,28.2,0,14.9,0],[2816.0,365,2126,90,100.0,2764,36,29.0,0,14.9,0],[2816.4,355,2139,87,100.0,2831,37,28.6,0,14.5,0],[2816.8,380,2147,89,100.0,2892,37,28.2,0,14.5,0],[2817.2,402,2152,90,100.0,2949,38,27.8,0,14.5,0],[2817.6,403,2157,92,100.0,3004,39,27.4,0,14.6,0],[2818.0,352,2152,94,100.0,3054,39,27.4,0,14.6,0],[2818.4,300,2149,97,100.0,3104,40,27.1,0,14.6,0],[2818.8,258,2145,99,100.0,3156,41,27.1,0,14.4,0],[2819.2,270,2142,93,100.0,3208,42,26.7,1,14.4,0],[2819.6,280,2138,87,100.0,3259,42,26.7,9,14.4,0],[2820.0,292,2135,82,100.0,3169,43,23.9,16,14.5,0],[2820.4,483,1765,82,80.8,3015,43,18.8,24,14.5,0],[2820.8,673,1363,84,49.6,2861,43,13.3,32,14.5,0],[2821.2,850,994,85,20.9,2751,43,11.8,40,29.3,0],[2821.6,838,1102,88,13.7,2667,43,16.1,48,29.3,0],[2822.0,766,1437,91,44.8,2582,43,20.4,39,29.3,0],[2822.4,695,1771,94,76.0,2531,43,24.3,23,29.3,0],[2822.8,616,1936,95,100.0,2557,43,23.9,7,12.2,0],[2823.2,535,1955,95,100.0,2583,43,23.5,0,12.2,0],[2823.6,453,1975,95,100.0,2609,44,23.1,0,12.2,0],[2824.0,392,1944,95,100.0,2646,45,22.8,0,15.0,0],[2824.4,360,1849,96,100.0,2680,45,22.4,0,15.0,0],[2824.8,328,1754,98,100.0,2713,46,22.0,0,15.0,0],[2825.2,313,1729,98,100.0,2732,47,22.0,0,14.6,0],[2825.6,322,1827,96,100.0,2748,47,22.0,0,14.6,0],[2826.0,332,1942,93,100.0,2768,47,22.0,0,14.6,0],[2826.4,348,2031,91,100.0,2798,48,23.1,0,14.6,0],[2826.8,379,2060,89,100.0,2826,48,24.3,0,14.6,0],[2827.2,413,2093,88,100.0,2859,49,25.5,0,14.6,0],[2827.6,444,2122,86,100.0,2894,50,25.9,0,14.3,0],[2828.0,461,2118,88,100.0,2927,50,25.5,0,14.3,0],[2828.4,480,2115,90,100.0,2962,50,25.1,0,14.3,0],[2828.8,499,2110,92,100.0,2996,51,25.1,0,14.3,0],[2829.2,448,2112,92,100.0,3030,52,24.7,0,14.3,0],[2829.6,397,2113,92,100.0,3061,52,24.3,0,14.3,0],[2830.0,345,2116,91,100.0,3088,53,24.3,0,14.7,0],[2830.4,334,2122,92,100.0,3111,53,24.7,0,14.7,0],[2830.8,329,2128,92,100.0,3134,54,25.1,0,14.7,0],[2831.2,325,2135,93,100.0,3162,54,25.1,0,14.5,0],[2831.6,310,2136,92,100.0,3200,55,25.9,0,14.5,0],[2832.0,296,2135,91,100.0,3236,55,26.3,0,14.5,1],[2832.4,283,2135,90,100.0,3267,56,26.7,0,14.5,1],[2832.8,299,2135,91,100.0,3300,57,26.7,0,14.5,1],[2833.2,331,2136,92,100.0,3331,57,26.7,0,14.5,1],[2833.6,360,2138,93,100.0,3359,57,26.7,0,14.5,1],[2834.0,351,2000,93,95.1,3392,58,26.7,0,14.4,1],[2834.4,305,1701,92,63.4,3423,58,26.7,15,14.4,1],[2834.8,261,1426,91,34.1,3451,59,26.7,44,14.4,1],[2835.2,307,1166,90,0.0,3200,59,23.5,78,14.5,1],[2835.6,515,1065,91,0.0,2968,58,20.0,90,14.5,0],[2836.0,724,963,93,0.0,2735,58,16.5,59,14.5,0],[2836.4,888,889,94,0.0,2703,58,15.3,27,15.4,0],[2836.8,906,970,92,4.3,2688,58,14.9,0,15.4,0],[2837.2,925,1050,90,9.3,2673,57,14.1,0,15.4,0],[2837.6,963,1130,88,14.4,2673,57,15.7,0,13.6,0],[2838.0,1236,1336,89,14.8,2677,57,18.4,0,13.6,0],[2838.4,1507,1543,92,13.1,2681,58,20.8,0,13.6,0],[2838.8,1780,1749,94,11.4,2690,58,22.8,0,14.6,0],[2839.2,1893,1874,93,12.1,2704,58,24.3,0,14.6,0],[2839.6,1987,1975,92,14.6,2716,58,25.5,0,14.6,0],[2840.0,2080,2077,91,17.0,2734,58,26.3,0,14.6,0],[2840.4,2100,2100,90,18.1,2756,59,26.3,0,14.6,0],[2840.8,2106,2100,91,17.6,2779,60,26.7,0,14.6,0],[2841.2,2113,2100,91,17.1,2799,60,26.3,0,14.6,0],[2841.6,2054,2032,92,15.5,2815,61,24.7,0,14.5,0],[2842.0,1967,1922,92,11.5,2831,61,23.5,0,14.5,0],[2842.4,1880,1812,92,7.5,2845,62,22.0,0,14.5,0],[2842.8,1781,1716,91,4.2,2852,62,21.2,0,14.6,0],[2843.2,1687,1646,90,5.0,2858,62,20.8,0,14.6,0],[2843.6,1593,1578,88,5.8,2864,62,20.0,0,14.6,0],[2844.0,1530,1524,88,6.4,2870,62,19.6,0,14.8,0],[2844.4,1513,1503,88,5.9,2875,62,19.6,0,14.8,0],[2844.8,1492,1479,88,5.3,2880,62,19.2,0,14.8,0],[2845.2,1511,1492,88,4.7,2884,62,20.0,0,14.6,0],[2845.6,1593,1591,88,6.0,2887,62,20.8,0,14.6,0],[2846.0,1672,1688,88,7.3,2890,62,21.2,0,14.6,0]],"ex3":[[5.2,653,656,89,0.2,916,0,11.4,0,14.4,0],[5.6,644,651,90,0.1,913,0,11.4,0,14.6,0],[6.0,631,644,91,0.6,910,0,11.4,0,14.6,0],[6.4,619,635,91,0.9,912,0,11.4,0,14.5,0],[6.8,632,645,90,2.0,919,0,11.4,0,14.5,0],[7.2,650,660,88,4.0,926,0,11.8,0,14.5,0],[7.6,666,674,86,5.8,1134,0,12.2,0,14.4,0],[8.0,730,727,87,5.6,1484,0,13.7,0,14.4,0],[8.4,808,796,89,3.2,1893,0,15.3,0,14.4,0],[8.8,880,860,91,1.0,2016,0,15.3,0,14.0,0],[9.2,819,814,92,0.0,1920,0,13.7,0,14.0,0],[9.6,747,748,92,0.0,1824,0,12.2,0,14.0,0],[10.0,676,682,92,0.0,1671,0,11.4,0,14.9,0],[10.4,661,661,91,0.2,1469,0,11.4,0,14.9,0],[10.8,653,650,91,0.5,1267,0,11.4,0,14.9,0],[11.2,643,638,90,0.9,1125,0,11.4,0,14.5,0],[11.6,641,634,89,1.4,1034,0,11.4,0,14.5,0],[12.0,640,631,88,1.9,944,0,11.4,0,14.5,0],[12.4,638,628,87,2.5,1084,0,12.2,0,13.9,0],[12.8,715,716,88,2.2,1380,0,13.3,0,13.9,0],[13.2,798,818,89,1.2,1699,0,14.9,0,13.9,0],[13.6,869,906,91,0.3,1800,0,14.9,0,14.2,0],[14.0,806,844,90,0.0,1816,0,13.7,0,14.2,0],[14.4,740,764,90,0.0,1833,0,12.6,0,14.2,0],[14.8,682,695,89,0.0,1713,0,11.8,0,15.4,0],[15.2,670,670,88,0.1,1511,0,11.8,0,15.4,0],[15.6,657,650,86,0.3,1293,0,11.4,0,15.4,0],[16.0,645,629,85,0.5,1155,0,11.4,0,13.9,0],[16.4,640,631,85,0.5,1062,0,11.4,0,13.9,0],[16.8,634,634,85,0.6,943,0,11.4,0,13.9,0],[17.2,628,637,85,0.6,900,0,11.4,0,14.3,0],[17.6,641,658,85,1.5,900,0,11.4,0,14.3,0],[18.0,656,685,85,3.3,900,0,11.8,0,14.3,0],[18.4,670,711,85,5.1,1202,0,12.2,0,14.6,0],[18.8,715,738,87,4.5,1694,0,12.9,0,14.6,0],[19.2,760,767,90,2.6,2186,0,14.1,0,14.6,0],[19.6,801,798,94,0.6,2222,0,14.1,0,14.5,0],[20.0,753,757,92,0.2,2002,0,12.9,0,14.5,0],[20.4,708,719,89,0.5,1798,0,12.2,0,14.5,0],[20.8,660,674,87,0.8,1590,0,11.8,0,15.1,0],[21.2,654,658,87,0.9,1413,0,11.4,0,15.1,0],[21.6,650,643,87,1.1,1235,0,11.4,0,15.1,0],[22.0,644,627,87,1.2,1109,0,11.4,0,13.9,0],[22.4,635,628,87,0.9,1016,0,11.4,0,13.9,0],[22.8,625,629,86,0.5,923,0,11.4,0,13.9,0],[23.2,619,631,85,0.1,903,0,11.4,0,14.3,0],[23.6,631,637,88,0.0,904,0,11.8,0,14.3,0],[24.0,643,641,91,0.0,906,0,11.8,0,14.3,0],[24.4,647,645,94,0.0,928,0,14.1,0,14.6,0],[24.8,574,973,92,23.1,958,0,18.4,0,14.6,0],[25.2,500,1302,90,56.4,989,0,22.8,0,14.6,0],[25.6,416,1627,88,92.3,1731,0,23.9,0,14.5,0],[26.0,313,1588,91,100.0,2609,0,22.8,0,14.5,0],[26.4,203,1546,93,100.0,3560,0,21.6,0,14.5,0],[26.8,119,1504,96,100.0,3827,0,19.6,0,17.9,0],[27.2,355,1294,94,76.9,3790,0,17.2,0,17.9,0],[27.6,592,1082,91,43.6,3753,0,14.5,0,17.9,0],[28.0,809,867,89,7.7,3400,0,12.9,0,29.3,0],[28.4,814,824,89,0.0,2990,0,12.2,0,29.3,0],[28.8,817,776,88,0.0,2546,0,11.4,0,29.3,0],[29.2,811,725,88,0.0,2126,0,11.0,0,29.3,0],[29.6,757,696,89,0.0,1758,0,11.0,0,29.3,0],[30.0,706,669,90,0.0,1419,0,11.0,0,29.3,0],[30.4,657,638,91,0.0,1225,0,11.0,0,19.5,0],[30.8,657,635,88,0.3,1121,0,11.4,0,19.5,0],[31.2,657,632,87,0.6,1017,0,11.4,0,19.5,0],[31.6,657,631,85,0.9,957,0,11.4,0,13.4,0],[32.0,656,635,87,1.3,914,0,11.4,0,13.4,0],[32.4,654,640,90,1.7,871,0,11.4,0,13.4,0],[32.8,656,651,92,2.0,875,0,11.4,0,13.6,0],[33.2,664,701,90,10.4,886,0,11.4,0,13.6,0],[33.6,674,750,87,20.2,898,0,11.4,0,13.6,0],[34.0,756,802,85,30.7,1725,0,14.5,0,13.7,0],[34.4,996,856,92,21.8,2620,0,18.4,0,13.7,0],[34.8,1237,908,98,11.3,3514,0,22.4,0,13.7,0],[35.2,1363,934,103,0.0,3403,0,20.0,0,14.7,0],[35.6,1257,889,103,0.0,3222,0,16.5,0,14.7,0],[36.0,1144,838,104,0.0,3013,0,12.6,0,14.7,0],[36.4,1041,811,103,0.0,2637,0,12.6,0,29.3,0],[36.8,950,812,101,0.3,2291,0,12.9,0,29.3,0],[37.2,851,814,99,0.7,1915,0,13.3,0,29.3,0],[37.6,799,821,96,1.0,2115,0,13.7,0,21.2,0],[38.0,818,833,91,1.1,2286,0,14.1,0,21.2,0],[38.4,838,847,85,1.2,2471,0,14.9,0,21.2,0],[38.8,857,860,82,1.2,2587,0,15.3,0,13.2,0],[39.2,870,872,85,0.9,2695,0,15.3,0,13.2,0],[39.6,885,883,88,0.6,2807,0,15.7,0,13.2,0],[40.0,891,891,90,0.4,2887,0,15.7,0,14.3,0]],"ex4":[[750.0,1920,1934,89,8.4,2886,37,22.4,0,14.6,0],[750.4,1962,1981,88,9.0,2933,38,22.8,0,14.6,0],[750.8,2006,2035,87,9.7,2982,39,22.8,0,14.6,0],[751.2,1996,2023,89,9.8,3031,39,22.4,0,14.6,0],[751.6,1988,2010,90,9.7,3076,40,22.4,0,14.6,0],[752.0,1980,1999,91,9.6,3123,40,22.4,0,14.7,0],[752.4,1952,1980,91,9.2,3171,41,22.0,0,14.7,0],[752.8,1926,1962,90,8.8,3217,42,22.0,0,14.7,0],[753.2,1893,1925,89,8.4,3252,42,20.0,0,14.6,0],[753.6,1817,1560,93,6.3,3285,43,17.2,1,14.6,0],[754.0,1737,1178,97,3.4,3319,43,14.1,36,14.6,0],[754.4,1649,840,100,0.8,3120,43,13.3,67,14.6,0],[754.8,1347,827,101,0.2,2847,43,13.7,99,14.6,0],[755.2,1055,814,102,0.6,2583,43,13.7,65,14.6,0],[755.6,849,806,103,0.9,2535,43,16.9,31,13.5,0],[756.0,1171,852,99,0.8,2538,43,21.0,0,13.5,0],[756.4,1505,899,94,0.4,2541,43,25.3,0,13.5,0],[756.8,1772,940,90,0.1,2529,43,23.1,0,14.6,0],[757.2,1612,881,91,0.0,2514,43,17.8,0,14.6,0],[757.6,1448,820,92,0.0,2500,43,12.7,0,14.6,0],[758.0,1305,763,93,0.0,2480,43,10.9,0,18.7,0],[758.4,1311,761,91,0.0,2460,42,10.6,0,18.7,0],[758.8,1317,759,89,0.0,2439,42,10.2,0,18.7,0],[759.2,1323,757,87,0.0,2420,42,10.2,0,29.3,0],[759.6,1327,754,88,0.0,2400,41,10.2,0,29.3,0],[760.0,1330,753,88,0.0,2384,40,10.2,0,29.3,0],[760.4,1333,750,88,0.0,2362,40,10.2,0,29.3,0],[760.8,1337,747,89,0.0,2339,40,10.2,0,29.3,0],[761.2,1340,745,89,0.0,2319,40,10.2,0,29.3,0],[761.6,1343,743,89,0.0,2299,40,10.2,0,29.3,0],[762.0,1345,740,90,0.0,2280,39,10.2,0,29.3,0],[762.4,1346,738,90,0.0,2261,39,10.2,0,29.3,0],[762.8,1348,737,91,0.0,2241,38,10.2,0,29.3,0],[763.2,1350,734,92,0.0,2220,38,10.2,0,29.3,0],[763.6,1353,731,93,0.0,2199,37,10.2,0,29.3,0],[764.0,1355,730,95,0.0,2179,37,10.2,0,29.3,0],[764.4,1356,727,95,0.0,2157,37,10.2,0,29.3,0],[764.8,1357,724,95,0.0,2136,37,10.2,0,29.3,0],[765.2,1359,719,95,0.0,2085,36,10.2,0,29.3,0],[765.6,1360,712,96,0.0,2029,35,10.2,0,29.3,0],[766.0,1363,705,97,0.0,1978,34,10.2,0,29.3,0],[766.4,1365,699,97,0.0,1931,33,10.2,0,29.3,0],[766.8,1366,693,96,0.0,1890,32,10.2,0,29.3,0],[767.2,1368,689,95,0.0,1844,32,10.2,0,29.3,0],[767.6,1368,682,95,0.0,1794,31,10.2,0,29.3,0],[768.0,1368,674,94,0.0,1749,30,10.2,0,29.3,0],[768.4,1368,666,94,0.0,1699,29,10.2,0,29.3,0],[768.8,1369,657,94,0.0,1642,28,10.2,0,29.3,0],[769.2,1371,650,94,0.0,1586,27,9.8,0,29.3,0],[769.6,1374,643,94,0.0,1536,26,9.8,0,29.3,0],[770.0,1375,637,95,0.0,1498,25,9.8,0,29.3,0],[770.4,1376,632,96,0.0,1462,25,9.8,0,29.3,0],[770.8,1378,627,98,0.0,1428,24,9.8,0,29.3,0],[771.2,1367,631,99,0.0,1376,24,9.8,0,29.3,0],[771.6,1338,652,98,0.0,1325,23,9.4,12,29.3,0],[772.0,1310,674,97,0.0,1267,22,9.4,45,29.3,0],[772.4,1223,683,96,0.0,1155,21,10.2,78,29.3,0],[772.8,1043,666,95,0.0,1037,19,10.6,88,29.3,0],[773.2,866,650,94,0.0,931,18,11.4,54,29.3,0],[773.6,739,637,95,0.1,895,17,11.4,20,14.3,0],[774.0,676,631,98,1.2,860,15,11.0,0,14.3,0],[774.4,609,625,101,2.2,824,14,11.0,0,14.3,0],[774.8,583,623,102,3.1,796,12,11.0,0,12.9,0],[775.2,594,625,100,2.1,764,11,11.0,0,12.9,0],[775.6,605,627,98,1.0,731,9,11.0,0,12.9,0],[776.0,612,629,95,0.0,698,7,11.0,0,13.2,0],[776.4,615,631,91,0.5,668,6,11.0,0,13.2,0],[776.8,619,634,86,1.0,643,4,11.0,0,13.2,0],[777.2,621,635,83,1.4,666,3,11.0,0,13.6,0],[777.6,622,635,83,1.4,686,2,11.4,0,13.6,0],[778.0,624,634,83,1.3,707,1,11.4,0,13.6,0]]};
+const I = {t:0, frp:1, dsd:2, flp:3, vcv:4, rpm:5, mph:6, tp:7, cpp:8, afr:9, fault:10};
+const CFG = {
+  ex1: {
+    labels: [{s:'dsd', t:385.2, txt:'Target', below:true}, {s:'frp', t:371.6, txt:'Actual', below:true}, {s:'flp', t:371.6, txt:'Tank pump side'}],
+    callouts: [{n:1, t:379.6, s:'frp'}, {n:2, t:387.2, s:'frp'}, {n:3, t:387.2, s:'vcv'}, {n:4, t:396.0, s:'frp'}]
+  },
+  ex2: {
+    labels: [{s:'dsd', t:2815.2, txt:'Target', below:true}, {s:'frp', t:2806.4, txt:'Actual'}, {s:'flp', t:2836.4, txt:'Tank pump side'}],
+    callouts: [{n:1, t:2817.2, s:'frp'}, {n:2, t:2825.2, s:'frp'}, {n:3, t:2832.4, s:'frp'}, {n:4, t:2840.4, s:'frp'}]
+  },
+  ex3: {
+    labels: [{s:'dsd', t:25.6, txt:'Target', left:true}, {s:'frp', t:5.2, txt:'Actual'}, {s:'flp', t:5.2, txt:'Tank pump side'}],
+    callouts: [{n:1, t:19.2, s:'frp'}, {n:2, t:26.8, s:'frp'}, {n:3, t:35.2, s:'frp'}]
+  },
+  ex4: {
+    coast: true,
+    labels: [{s:'dsd', t:762, txt:'Target', below:true}, {s:'frp', t:759.2, txt:'Actual'}, {s:'flp', t:762, txt:'Tank pump side'}],
+    callouts: [{n:1, t:755.6, s:'frp'}, {n:2, t:756.8, s:'frp'}, {n:3, t:768.0, s:'frp'}, {n:4, t:774.4, s:'frp'}]
+  }
+};
+const NS = 'http://www.w3.org/2000/svg';
+const fmtT = s => { s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const fmtN = v => v.toLocaleString('en-US');
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function spans(rows, test) {
+  const out = []; let a = null;
+  rows.forEach((r, i) => {
+    if (test(r)) { if (a === null) a = i; }
+    else if (a !== null) { out.push([a, i - 1]); a = null; }
+  });
+  if (a !== null) out.push([a, rows.length - 1]);
+  return out;
+}
+
+function render(id) {
+  const box = document.getElementById(id);
+  const rows = DATA[id], cfg = CFG[id];
+  box.innerHTML = '';
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  legend.innerHTML =
+    '<span><i class="sw dash" style="border-color:var(--target)"></i>Target</span>' +
+    '<span><i class="sw" style="border-color:var(--actual)"></i>Actual</span>' +
+    '<span><i class="sw" style="border-color:var(--tank)"></i>Tank pump side</span>';
+  box.appendChild(legend);
+
+  const W = box.clientWidth;
+  const m = {l: 46, r: 12};
+  const p1 = {top: 8, h: 210};
+  const gap = 34;
+  const p2 = {top: p1.top + p1.h + gap, h: 78};
+  const H = p2.top + p2.h + 26;
+  const pw = W - m.l - m.r;
+  const t0 = rows[0][0], t1 = rows[rows.length - 1][0];
+  const x = t => m.l + (t - t0) / (t1 - t0) * pw;
+  const PMAX = 2500;
+  const y1 = v => p1.top + p1.h - v / PMAX * p1.h;
+  const y2 = v => p2.top + p2.h - v / 100 * p2.h;
+  const svg = el('svg', {viewBox: `0 0 ${W} ${H}`, height: H, role: 'img',
+    'aria-label': 'Fuel rail pressure, target versus actual, with pump command below'}, box);
+
+  // Bands: shifts (clutch pressed) across both panels, drops on the pressure panel
+  const shiftSp = spans(rows, r => r[I.cpp] >= 40);
+  const dropSp = spans(rows, r => r[I.dsd] >= 1000 && r[I.frp] < 0.4 * r[I.dsd]);
+  const half = (rows[1][0] - rows[0][0]) / 2;
+  const bx = (a, b) => [x(Math.max(t0, rows[a][0] - half)), x(Math.min(t1, rows[b][0] + half))];
+  if (cfg.coast) spans(rows, r => r[I.afr] >= 29).forEach(([a, b]) => {
+    const [xa, xb] = bx(a, b);
+    el('rect', {x: xa, y: p1.top, width: xb - xa, height: p1.h, fill: 'var(--coast)'}, svg);
+    if (xb - xa > 60) {
+      const tx = el('text', {x: (xa + xb) / 2, y: p1.top + 14, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 600, fill: 'var(--coast-ink)'}, svg);
+      tx.textContent = 'Fuel off';
+    }
+  });
+  dropSp.forEach(([a, b]) => {
+    const [xa, xb] = bx(a, b);
+    el('rect', {x: xa, y: p1.top, width: xb - xa, height: p1.h, fill: 'var(--drop)'}, svg);
+    if (xb - xa > 34) {
+      const tx = el('text', {x: (xa + xb) / 2, y: p1.top + 14, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 600, fill: 'var(--critical)'}, svg);
+      tx.textContent = '▼ Drop';
+    }
+  });
+  shiftSp.forEach(([a, b]) => {
+    const [xa, xb] = bx(a, b);
+    el('rect', {x: xa, y: p1.top, width: xb - xa, height: p1.h, fill: 'var(--shift)'}, svg);
+    el('rect', {x: xa, y: p2.top, width: xb - xa, height: p2.h, fill: 'var(--shift)'}, svg);
+    const tx = el('text', {x: (xa + xb) / 2, y: p2.top + 12, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--ink-2)', class: 'halo'}, svg);
+    tx.textContent = 'Shift';
+  });
+
+  // Grid and axes
+  [0, 500, 1000, 1500, 2000].forEach(v => {
+    el('line', {x1: m.l, x2: m.l + pw, y1: y1(v), y2: y1(v), stroke: v ? 'var(--grid)' : 'var(--axis)', 'stroke-width': 1}, svg);
+    const tx = el('text', {x: m.l - 6, y: y1(v) + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--muted)', style: 'font-variant-numeric:tabular-nums'}, svg);
+    tx.textContent = fmtN(v);
+  });
+  [0, 50, 100].forEach(v => {
+    el('line', {x1: m.l, x2: m.l + pw, y1: y2(v), y2: y2(v), stroke: v ? 'var(--grid)' : 'var(--axis)', 'stroke-width': 1}, svg);
+    const tx = el('text', {x: m.l - 6, y: y2(v) + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--muted)', style: 'font-variant-numeric:tabular-nums'}, svg);
+    tx.textContent = v + '%';
+  });
+  const lab2 = el('text', {x: m.l, y: p2.top - 8, 'font-size': 12, fill: 'var(--ink-2)'}, svg);
+  lab2.textContent = 'Pump command';
+  const step = pw < 420 ? 10 : 5;
+  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
+    const tx = el('text', {x: x(t), y: H - 6, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--muted)', style: 'font-variant-numeric:tabular-nums'}, svg);
+    tx.textContent = fmtT(t);
+  }
+  const unit = el('text', {x: m.l - 6, y: y1(2500) + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--muted)'}, svg);
+  unit.textContent = 'psi';
+
+  // Lines
+  const path = (k, yf) => rows.map((r, i) => (i ? 'L' : 'M') + x(r[0]).toFixed(1) + ',' + yf(r[I[k]]).toFixed(1)).join('');
+  const area = 'M' + x(t0) + ',' + y2(0) + rows.map(r => 'L' + x(r[0]).toFixed(1) + ',' + y2(r[I.vcv]).toFixed(1)).join('') + 'L' + x(t1) + ',' + y2(0) + 'Z';
+  el('path', {d: area, fill: 'var(--pump)', 'fill-opacity': 0.12}, svg);
+  el('path', {d: path('vcv', y2), fill: 'none', stroke: 'var(--pump)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, svg);
+  el('path', {d: path('flp', y1), fill: 'none', stroke: 'var(--tank)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, svg);
+  el('path', {d: path('dsd', y1), fill: 'none', stroke: 'var(--target)', 'stroke-width': 2, 'stroke-dasharray': '5 4', 'stroke-linejoin': 'round'}, svg);
+  el('path', {d: path('frp', y1), fill: 'none', stroke: 'var(--actual)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, svg);
+
+  const at = t => rows.reduce((b, r) => Math.abs(r[0] - t) < Math.abs(b[0] - t) ? r : b, rows[0]);
+  // Direct labels
+  cfg.labels.forEach(L => {
+    const r = at(L.t);
+    const yy = y1(r[I[L.s]]) + (L.below ? 16 : -7);
+    const tx = el('text', {x: L.left ? x(L.t) - 6 : x(L.t) + 2, y: yy, 'text-anchor': L.left ? 'end' : 'start', 'font-size': 12, fill: 'var(--ink-2)', 'font-weight': 550, class: 'halo'}, svg);
+    tx.textContent = L.txt;
+  });
+  // Numbered callouts
+  cfg.callouts.forEach(c => {
+    const r = at(c.t);
+    const cx = x(c.t);
+    let cy = c.s === 'vcv' ? y2(r[I.vcv]) - 16 : y1(r[I[c.s]]) - 18;
+    if (c.s !== 'vcv') cy = Math.max(p1.top + 12, cy);
+    else cy = Math.max(p2.top + 12, cy);
+    if (c.s === 'vcv' && r[I.vcv] > 80) cy = y2(r[I.vcv]) + 16;
+    el('circle', {cx, cy, r: 10, fill: 'var(--ink)', stroke: 'var(--surface)', 'stroke-width': 2}, svg);
+    const tx = el('text', {x: cx, y: cy + 4.5, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: 'var(--surface)'}, svg);
+    tx.textContent = c.n;
+  });
+
+  // Hover layer
+  const cross = el('g', {opacity: 0}, svg);
+  const vl = el('line', {y1: p1.top, y2: p2.top + p2.h, stroke: 'var(--muted)', 'stroke-width': 1}, cross);
+  const dots = ['dsd', 'frp', 'flp'].map(k => el('circle', {r: 4, fill: `var(--${k === 'dsd' ? 'target' : k === 'frp' ? 'actual' : 'tank'})`, stroke: 'var(--surface)', 'stroke-width': 2}, cross));
+  const dv = el('circle', {r: 4, fill: 'var(--pump)', stroke: 'var(--surface)', 'stroke-width': 2}, cross);
+  const hit = el('rect', {x: m.l, y: 0, width: pw, height: H, fill: 'transparent'}, svg);
+  const tip = document.createElement('div');
+  tip.className = 'tip';
+  box.appendChild(tip);
+  const row = (k, label, val, dash) => `<div class="r"><span>${k ? `<i class="k${dash ? ' dash' : ''}" style="border-color:var(--${k})"></i>` : ''}${label}</span><span>${val}</span></div>`;
+  function show(ev) {
+    const rect = svg.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) * (W / rect.width);
+    const t = t0 + (px - m.l) / pw * (t1 - t0);
+    const r = at(t);
+    const cx = x(r[0]);
+    vl.setAttribute('x1', cx); vl.setAttribute('x2', cx);
+    ['dsd', 'frp', 'flp'].forEach((k, i) => { dots[i].setAttribute('cx', cx); dots[i].setAttribute('cy', y1(r[I[k]])); });
+    dv.setAttribute('cx', cx); dv.setAttribute('cy', y2(r[I.vcv]));
+    cross.setAttribute('opacity', 1);
+    tip.innerHTML = `<div class="t">${fmtT(r[0])} into the log</div>` +
+      row('target', 'Target', fmtN(r[I.dsd]) + ' psi', true) +
+      row('actual', 'Actual', fmtN(r[I.frp]) + ' psi') +
+      row('tank', 'Tank pump side', fmtN(r[I.flp]) + ' psi') +
+      row('pump', 'Pump command', Math.round(r[I.vcv]) + '%') + '<hr>' +
+      row('', 'Engine speed', fmtN(r[I.rpm]) + ' rpm') +
+      row('', 'Road speed', r[I.mph] + ' mph') +
+      row('', 'Clutch pedal', r[I.cpp] + '%') +
+      row('', 'Air-fuel ratio', r[I.afr] >= 29 ? 'fuel off' : r[I.afr].toFixed(1)) +
+      (r[I.fault] ? '<div class="flag">▲ Rail pressure fault flagged</div>' : '');
+    tip.classList.add('on');
+    const bw = box.clientWidth, tw = tip.offsetWidth;
+    const sx = cx * (rect.width / W);
+    let left = sx + 14;
+    if (left + tw > bw) left = sx - tw - 14;
+    tip.style.left = Math.max(0, left) + 'px';
+    tip.style.top = (legend.offsetHeight + 8) + 'px';
+  }
+  function hide() { cross.setAttribute('opacity', 0); tip.classList.remove('on'); }
+  hit.addEventListener('pointermove', show);
+  hit.addEventListener('pointerdown', show);
+  hit.addEventListener('pointerleave', hide);
+}
+
+function table(id) {
+  const rows = DATA[id];
+  let h = '<table><thead><tr><th>Time</th><th>Target psi</th><th>Actual psi</th><th>Tank side psi</th><th>Pump</th><th>rpm</th><th>mph</th><th>Clutch</th></tr></thead><tbody>';
+  rows.forEach((r, i) => {
+    if (i % 2) return;
+    const low = r[I.dsd] >= 1000 && r[I.frp] < 0.4 * r[I.dsd];
+    h += `<tr${low ? ' class="low"' : ''}><td>${fmtT(r[0])}${r[0] % 1 ? '.' + Math.round((r[0] % 1) * 10) : ''}</td><td>${fmtN(r[I.dsd])}</td><td>${fmtN(r[I.frp])}</td><td>${r[I.flp]}</td><td>${Math.round(r[I.vcv])}%</td><td>${fmtN(r[I.rpm])}</td><td>${r[I.mph]}</td><td>${r[I.cpp]}%</td></tr>`;
+  });
+  document.querySelector(`[data-table="${id}"]`).innerHTML = h + '</tbody></table>';
+}
+
+const ids = ['ex1', 'ex2', 'ex3', 'ex4'];
+ids.forEach(id => { render(id); table(id); });
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => ids.forEach(render), 120); });
+</script>
+</body>
+</html>
